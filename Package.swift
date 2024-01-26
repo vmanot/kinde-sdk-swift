@@ -1,11 +1,12 @@
-// swift-tools-version:5.1
+// swift-tools-version:5.9
 
 import PackageDescription
 
 let package = Package(
     name: "KindeSDK",
     platforms: [
-        .iOS(.v13),
+        .iOS(.v16),
+        .macOS(.v13),
     ],
     products: [
         .library(
@@ -14,16 +15,20 @@ let package = Package(
         ),
     ],
     dependencies: [
-	    .package(url: "https://github.com/openid/AppAuth-iOS.git", from: "1.6.2")
+        .package(
+            url: "https://github.com/openid/AppAuth-iOS.git",
+            from: "1.6.2"
+        ),
+        .package(url: "https://github.com/SwiftUIX/SwiftUIX.git", branch: "master"),
     ],
     targets: [
         .target(
             name: "KindeSDK",
             dependencies: [
-		        .product(name: "AppAuth", package: "AppAuth-iOS")
-		 ],
+                .product(name: "AppAuth", package: "AppAuth-iOS"),
+                "SwiftUIX"
+            ],
             path: "Sources/KindeSDK/"
         )
-    ],
-    swiftLanguageVersions: [.v5]
+    ]
 )

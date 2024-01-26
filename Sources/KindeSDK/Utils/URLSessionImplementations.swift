@@ -8,6 +8,7 @@ import Foundation
 #if !os(macOS)
 import MobileCoreServices
 #endif
+import UniformTypeIdentifiers
 
 class URLSessionRequestBuilderFactory: RequestBuilderFactory {
     func getNonDecodableBuilder<T>() -> RequestBuilder<T>.Type {
@@ -623,14 +624,12 @@ private class FormDataEncoding: ParameterEncoding {
     func mimeType(for url: URL) -> String {
         let pathExtension = url.pathExtension
 
-        if let uti = UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, pathExtension as NSString, nil)?.takeRetainedValue() {
-            if let mimetype = UTTypeCopyPreferredTagWithClass(uti, kUTTagClassMIMEType)?.takeRetainedValue() {
-                return mimetype as String
-            }
+        guard let uti = UTType(filenameExtension: pathExtension) else {
+            return "application/octet-stream"
         }
-        return "application/octet-stream"
+        
+        return uti.preferredMIMEType ?? "application/octet-stream"
     }
-
 }
 
 private class FormURLEncoding: ParameterEncoding {

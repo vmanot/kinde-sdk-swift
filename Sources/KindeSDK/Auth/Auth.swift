@@ -1,5 +1,6 @@
 import AppAuth
 import os.log
+import SwiftUIX
 
 /// The Kinde authentication service
 public final class Auth {
@@ -10,74 +11,84 @@ public final class Auth {
     private let logger: LoggerProtocol
     private var privateAuthSession: Bool = false
     
-    init(config: Config, authStateRepository: AuthStateRepository, logger: LoggerProtocol) {
+    init(
+        config: Config,
+        authStateRepository: AuthStateRepository,
+        logger: LoggerProtocol
+    ) {
         self.config = config
         self.authStateRepository = authStateRepository
         self.logger = logger
     }
     
-    /// Is the user authenticated as of the last use of authentication state?
     public func isAuthorized() -> Bool {
         return authStateRepository.state?.isAuthorized ?? false
     }
     
     public func isAuthenticated() -> Bool {
         let isAuthorized = authStateRepository.state?.isAuthorized
+        
         guard let lastTokenResponse = authStateRepository.state?.lastTokenResponse else {
             return false
         }
+        
         guard let accessTokenExpirationDate = lastTokenResponse.accessTokenExpirationDate else {
             return false
         }
+        
         return lastTokenResponse.accessToken != nil &&
-               isAuthorized == true &&
-               accessTokenExpirationDate > Date()
+        
+        isAuthorized == true &&
+        
+        accessTokenExpirationDate > Date()
     }
     
     public func getUserDetails() -> User? {
         guard let params = authStateRepository.state?.lastTokenResponse?.idToken?.parsedJWT else {
             return nil
         }
-        if let idValue = params["sub"] as? String,
-           let email = params["email"] as? String {
+        
+        if
+            let idValue = params["sub"] as? String,
+            let email = params["email"] as? String
+        {
             let givenName = params["given_name"] as? String
             let familyName = params["family_name"] as? String
             let picture = params["picture"] as? String
-            return User(id: idValue,
-                        email: email,
-                        lastName: familyName,
-                        firstName: givenName,
-                        picture: picture)
+            
+            return User(
+                id: idValue,
+                email: email,
+                lastName: familyName,
+                firstName: givenName,
+                picture: picture
+            )
         }
+        
         return nil
     }
     
-
-    public func getClaim(forKey key: String, token: TokenType = .accessToken) -> Claim? {
+    public func getClaim(
+        forKey key: String,
+        token: TokenType = .accessToken
+    ) -> Claim? {
         let lastTokenResponse = authStateRepository.state?.lastTokenResponse
         let tokenToParse = token == .accessToken ? lastTokenResponse?.accessToken: lastTokenResponse?.idToken
+        
         guard let params = tokenToParse?.parsedJWT else {
             return nil
         }
-        if let valueOrNil = params[key],
-            let value = valueOrNil {
+        
+        if
+            let valueOrNil = params[key],
+            let value = valueOrNil
+        {
             return Claim(name: key, value: value)
         }
+        
         return nil
     }
     
-    @available(*, deprecated, message: "Use getClaim(forKey:token:) with return type Claim?")
-    public func getClaim(key: String, token: TokenType = .accessToken) -> Any? {
-        let lastTokenResponse = authStateRepository.state?.lastTokenResponse
-        let tokenToParse = token == .accessToken ? lastTokenResponse?.accessToken: lastTokenResponse?.idToken
-        guard let params = tokenToParse?.parsedJWT else {
-            return nil
-        }
-        if !params.keys.contains(key) {
-            os_log("The claimed value of \"%@\" does not exist in your token", log: .default, type: .error, key)
-        }
-        return params[key] ?? nil
-    }
     
     public func getPermissions() -> Permissions? {
         if let permissionsClaim = getClaim(forKey: ClaimKey.permissions.rawValue),
@@ -86,88 +97,89 @@ public final class Auth {
            let orgCode = orgCodeClaim.value as? String {
             
             let organization = Organization(code: orgCode)
-            let permissions = Permissions(organization: organization,
-                                          permissions: permissionsArray)
+            let permissions = Permissions(
+                organization: organization,
+                permissions: permissionsArray
+            )
+            
             return permissions
         }
+        
         return nil
     }
     
     public func getPermission(name: String) -> Permission? {
-        if let permissionsClaim = getClaim(forKey: ClaimKey.permissions.rawValue),
-           let permissionsArray = permissionsClaim.value as? [String],
-           let orgCodeClaim = getClaim(forKey: ClaimKey.organisationCode.rawValue),
-           let orgCode = orgCodeClaim.value as? String {
+        if
+            let permissionsClaim = getClaim(forKey: ClaimKey.permissions.rawValue),
+            let permissionsArray = permissionsClaim.value as? [String],
+            let orgCodeClaim = getClaim(forKey: ClaimKey.organisationCode.rawValue),
+            let orgCode = orgCodeClaim.value as? String
+        {
             
             let organization = Organization(code: orgCode)
-            let permission = Permission(organization: organization,
-                                        isGranted: permissionsArray.contains(name))
+            let permission = Permission(
+                organization: organization,
+                isGranted: permissionsArray.contains(name)
+            )
+            
             return permission
         }
+        
         return nil
     }
     
     public func getOrganization() -> Organization? {
-        if let orgCodeClaim = getClaim(forKey: ClaimKey.organisationCode.rawValue),
-           let orgCode = orgCodeClaim.value as? String {
+        if
+            let orgCodeClaim = getClaim(forKey: ClaimKey.organisationCode.rawValue),
+            let orgCode = orgCodeClaim.value as? String
+        {
             let org = Organization(code: orgCode)
+            
             return org
         }
+        
         return nil
     }
     
     public func getUserOrganizations() -> UserOrganizations? {
-        if let userOrgsClaim = getClaim(forKey: ClaimKey.organisationCodes.rawValue,
-                                   token: .idToken),
-           let userOrgs = userOrgsClaim.value as? [String] {
-            
+        if
+            let userOrgsClaim = getClaim(
+                forKey: ClaimKey.organisationCodes.rawValue,
+                token: .idToken
+            ),
+            let userOrgs = userOrgsClaim.value as? [String]
+        {
             let orgCodes = userOrgs.map({ Organization(code: $0)})
+            
             return UserOrganizations(orgCodes: orgCodes)
         }
+        
         return nil
     }
     
-    private func getViewController() async -> UIViewController? {
-        await MainActor.run {
-            let keyWindow = UIApplication.shared.connectedScenes.flatMap { ($0 as? UIWindowScene)?.windows ?? [] }
-                                                                .first { $0.isKeyWindow }
-            var topController = keyWindow?.rootViewController
-            while let presentedViewController = topController?.presentedViewController {
-                topController = presentedViewController
-            }
-            return topController
-        }
-    }
-    
-    /// Register a new user
-    ///
-    @available(*, renamed: "register")
-    public func register(orgCode: String = "",
-                         _ completion: @escaping (Result<Bool, Error>) -> Void) {
-        Task {
-            do {
-                try await register(orgCode: orgCode)
-                await MainActor.run(body: {
-                    completion(.success(true))
-                })
-            } catch {
-                await MainActor.run(body: {
-                    completion(.failure(error))
-                })
-            }
-        }
+    @MainActor
+    private func getPresenter() async -> AppKitOrUIKitResponder? {
+        let keyWindow = AppKitOrUIKitApplication.shared.firstKeyWindow
+
+        #if os(iOS)
+        let topController = keyWindow?._SwiftUIX_nearestResponder(ofKind: AppKitOrUIKitViewController.self)
+
+        return topController?.topmostPresentedViewController
+        #else
+        return keyWindow
+        #endif
     }
     
     public func register(orgCode: String = "") async throws -> () {
         return try await withCheckedThrowingContinuation { continuation in
             Task {
-                guard let viewController = await self.getViewController() else {
+                guard let presenter = await self.getPresenter() else {
                     continuation.resume(throwing: AuthError.notAuthenticated)
                     return
                 }
                 do {
                     let request = try await self.getAuthorizationRequest(signUp: true, orgCode: orgCode)
-                    _ = try await self.runCurrentAuthorizationFlow(request: request, viewController: viewController)
+                    _ = try await self.runCurrentAuthorizationFlow(request: request, presenter: presenter)
                     continuation.resume(with: .success(()))
                 } catch {
                     continuation.resume(throwing: error)
@@ -176,35 +188,19 @@ public final class Auth {
         }
     }
     
-    /// Login an existing user
-    ///
-    @available(*, renamed: "login")
-    public func login(orgCode: String = "",
-                      _ completion: @escaping (Result<Bool, Error>) -> Void) {
-        Task {
-            do {
-                try await login(orgCode: orgCode)
-                await MainActor.run(body: {
-                    completion(.success(true))
-                })
-            } catch {
-                await MainActor.run(body: {
-                    completion(.failure(error))
-                })
-            }
-        }
-    }
-
-    public func login(orgCode: String = "") async throws -> () {
+    public func login(
+        orgCode: String = ""
+    ) async throws -> () {
         return try await withCheckedThrowingContinuation { continuation in
             Task {
-                guard let viewController = await self.getViewController() else {
+                guard let presenter = await self.getPresenter() else {
                     continuation.resume(throwing: AuthError.notAuthenticated)
+                    
                     return
                 }
                 do {
                     let request = try await self.getAuthorizationRequest(signUp: false, orgCode: orgCode)
-                    _ = try await self.runCurrentAuthorizationFlow(request: request, viewController: viewController)
+                    _ = try await self.runCurrentAuthorizationFlow(request: request, presenter: presenter)
                     continuation.resume(with: .success(()))
                 } catch {
                     continuation.resume(throwing: error)
@@ -212,50 +208,23 @@ public final class Auth {
             }
         }
     }
-        
-    /// Register a new organization
-    ///
-    @available(*, renamed: "createOrg")
-    public func createOrg( _ completion: @escaping (Result<Bool, Error>) -> Void) {
-        Task {
-            do {
-                try await createOrg()
-                await MainActor.run(body: {
-                    completion(.success(true))
-                })
-            } catch {
-                await MainActor.run(body: {
-                    completion(.failure(error))
-                })
-            }
-        }
-    }
-
-    public func createOrg(orgName: String = "") async throws -> () {
+    
+    public func createOrg(
+        orgName: String = ""
+    ) async throws -> () {
         return try await withCheckedThrowingContinuation { continuation in
             Task {
-                guard let viewController = await self.getViewController() else {
+                guard let presenter = await self.getPresenter() else {
                     continuation.resume(throwing: AuthError.notAuthenticated)
                     return
                 }
                 do {
                     let request = try await self.getAuthorizationRequest(signUp: true, createOrg: true, orgName: orgName)
-                    _ = try await self.runCurrentAuthorizationFlow(request: request, viewController: viewController)
+                    _ = try await self.runCurrentAuthorizationFlow(request: request, presenter: presenter)
                     continuation.resume(with: .success(()))
                 } catch {
                     continuation.resume(throwing: error)
                 }
-            }
-        }
-    }
-    
-    /// Logout the current user
-    @available(*, renamed: "logout()")
-    public func logout(_ completion: @escaping (_ result: Bool) -> Void) {
-        Task {
-            let result = await logout()
-            await MainActor.run {
-                completion(result)
             }
         }
     }
@@ -266,31 +235,14 @@ public final class Auth {
         return cleared
     }
     
-    /// Create an Authorization Request using the configured Issuer and Redirect URLs,
-    /// and OpenIDConnect configuration discovery
-    @available(*, renamed: "getAuthorizationRequest(signUp:createOrg:orgCode:usePKCE:useNonce:)")
-    private func getAuthorizationRequest(signUp: Bool,
-                                         createOrg: Bool = false,
-                                         orgCode: String = "",
-                                         usePKCE: Bool = true,
-                                         useNonce: Bool = false,
-                                         then completion: @escaping (Result<OIDAuthorizationRequest, Error>) -> Void) {
-        Task {
-            do {
-                let request = try await self.getAuthorizationRequest(signUp: signUp, createOrg: createOrg, orgCode: orgCode, usePKCE: usePKCE, useNonce: useNonce)
-                completion(.success(request))
-            } catch {
-                completion(.failure(AuthError.notAuthenticated))
-            }
-        }
-    }
-    
-    private func getAuthorizationRequest(signUp: Bool,
-                                         createOrg: Bool = false,
-                                         orgCode: String = "",
-                                         orgName: String = "",
-                                         usePKCE: Bool = true,
-                                         useNonce: Bool = false) async throws -> OIDAuthorizationRequest {
+    private func getAuthorizationRequest(
+        signUp: Bool,
+        createOrg: Bool = false,
+        orgCode: String = "",
+        orgName: String = "",
+        usePKCE: Bool = true,
+        useNonce: Bool = false
+    ) async throws -> OIDAuthorizationRequest {
         return try await withCheckedThrowingContinuation { continuation in
             Task {
                 let issuerUrl = config.getIssuerUrl()
@@ -315,33 +267,63 @@ public final class Auth {
         }
     }
     
-    private func runCurrentAuthorizationFlow(request: OIDAuthorizationRequest, viewController: UIViewController) async throws -> Bool {
+#if os(iOS)
+    private func runCurrentAuthorizationFlow(
+        request: OIDAuthorizationRequest,
+        presenter: AppKitOrUIKitResponder
+    ) async throws -> Bool {
         return try await withCheckedThrowingContinuation { continuation in
-            Task {
-                await MainActor.run {
-                    currentAuthorizationFlow = OIDAuthState.authState(byPresenting: request,
-                                                                      presenting: viewController,
-                                                                      prefersEphemeralSession: privateAuthSession,
-                                                                      callback: authorizationFlowCallback(then: { value in
+            Task { @MainActor in
+                currentAuthorizationFlow = OIDAuthState.authState(
+                    byPresenting: request,
+                    presenting: presenter as! AppKitOrUIKitViewController,
+                    prefersEphemeralSession: privateAuthSession,
+                    callback: authorizationFlowCallback(then: { value in
                         switch value {
-                        case .success:
-                            continuation.resume(returning: true)
-                        case .failure(let error):
-                            continuation.resume(throwing: error)
+                            case .success:
+                                continuation.resume(returning: true)
+                            case .failure(let error):
+                                continuation.resume(throwing: error)
                         }
-                    }))
-                }
+                    })
+                )
             }
         }
     }
+#elseif os(macOS)
+    private func runCurrentAuthorizationFlow(
+        request: OIDAuthorizationRequest,
+        presenter: AppKitOrUIKitResponder
+    ) async throws -> Bool {
+        return try await withCheckedThrowingContinuation { continuation in
+            Task { @MainActor in
+                currentAuthorizationFlow = OIDAuthState.authState(
+                    byPresenting: request,
+                    presenting: presenter as! NSWindow,
+                    prefersEphemeralSession: privateAuthSession,
+                    callback: authorizationFlowCallback(then: { value in
+                        switch value {
+                            case .success:
+                                continuation.resume(returning: true)
+                            case .failure(let error):
+                                continuation.resume(throwing: error)
+                        }
+                    })
+                )
+            }
+        }
+    }
+#endif
     
-    private func discoverConfiguration(issuerUrl: URL,
-                                              signUp: Bool,
-                                              createOrg: Bool = false,
-                                              orgCode: String = "",
-                                              orgName: String = "",
-                                              usePKCE: Bool = true,
-                                              useNonce: Bool = false) async throws -> (OIDAuthorizationRequest) {
+    private func discoverConfiguration(
+        issuerUrl: URL,
+        signUp: Bool,
+        createOrg: Bool = false,
+        orgCode: String = "",
+        orgName: String = "",
+        usePKCE: Bool = true,
+        useNonce: Bool = false
+    ) async throws -> (OIDAuthorizationRequest) {
         return try await withCheckedThrowingContinuation { continuation in
             OIDAuthorizationService.discoverConfiguration(forIssuer: issuerUrl) { configuration, error in
                 if let error = error {
@@ -373,7 +355,7 @@ public final class Auth {
                 }
                 
                 if let audience = self.config.audience, !audience.isEmpty {
-                   additionalParameters["audience"] = audience
+                    additionalParameters["audience"] = audience
                 }
                 
                 if !orgCode.isEmpty {
@@ -390,7 +372,7 @@ public final class Auth {
                 let codeChallenge = usePKCE && codeVerifier != nil ? OIDTokenUtilities.encodeBase64urlNoPadding(OIDTokenUtilities.sha256(codeVerifier!)) : nil
                 let state = OIDTokenUtilities.randomURLSafeString(withSize: 32)
                 let nonce = useNonce ? OIDTokenUtilities.randomURLSafeString(withSize: 32) : nil
-
+                
                 let request = OIDAuthorizationRequest(configuration: configuration,
                                                       clientId: self.config.clientId,
                                                       clientSecret: nil, // Only required for Client Credentials Flow
@@ -410,7 +392,9 @@ public final class Auth {
     }
     
     /// Callback to complete the current authorization flow
-    private func authorizationFlowCallback(then completion: @escaping (Result<Bool, Error>) -> Void) -> (OIDAuthState?, Error?) -> Void {
+    private func authorizationFlowCallback(
+        then completion: @escaping (Result<Bool, Error>) -> Void
+    ) -> (OIDAuthState?, Error?) -> Void {
         return { authState, error in
             if let error = error {
                 self.logger.error(message: "Failed to finish authentication flow: \(error.localizedDescription)")
@@ -425,7 +409,7 @@ public final class Auth {
             }
             
             self.logger.debug(message: "Got authorization tokens. Access token: " +
-                          "\(authState.lastTokenResponse?.accessToken ?? "nil")")
+                              "\(authState.lastTokenResponse?.accessToken ?? "nil")")
             
             let saved = self.authStateRepository.setState(authState)
             if !saved {
@@ -438,28 +422,13 @@ public final class Auth {
     }
     
     /// Is the given error the result of user cancellation of an authorization flow
-    public func isUserCancellationErrorCode(_ error: Error) -> Bool {
+    public func isUserCancellationErrorCode(
+        _ error: Error
+    ) -> Bool {
         let error = error as NSError
         return error.domain == OIDGeneralErrorDomain && error.code == OIDErrorCode.userCanceledAuthorizationFlow.rawValue
     }
     
-    /// Perform an action, such as an API call, with a valid access token and ID token
-    /// Failure to get a valid access token may require reauthentication
-    @available(*, renamed: "performWithFreshTokens()")
-    func performWithFreshTokens(_ action: @escaping (Result<Tokens, Error>) -> Void) {
-        Task {
-            do {
-                if let result = try await performWithFreshTokens() {
-                    action(.success(result))
-                } else {
-                    action(.failure(AuthError.notAuthenticated))
-                }
-            } catch {
-                action(.failure(error))
-            }
-        }
-    }
-
     func performWithFreshTokens() async throws -> Tokens? {
         guard let authState = authStateRepository.state else {
             self.logger.error(message: "Failed to get authentication state")
@@ -500,15 +469,22 @@ public final class Auth {
 }
 
 // MARK: - Feature Flags
+
 extension Auth {
-    
-    public func getFlag(code: String, defaultValue: Any? = nil, flagType: Flag.ValueType? = nil) throws -> Flag {
+    public func getFlag(
+        code: String,
+        defaultValue: Any? = nil,
+        flagType: Flag.ValueType? = nil
+    ) throws -> Flag {
         return try getFlagInternal(code: code, defaultValue: defaultValue, flagType: flagType)
     }
     
     // Wrapper Methods
     
-    public func getBooleanFlag(code: String, defaultValue: Bool? = nil) throws -> Bool {
+    public func getBooleanFlag(
+        code: String,
+        defaultValue: Bool? = nil
+    ) throws -> Bool {
         if let value = try getFlag(code: code, defaultValue: defaultValue, flagType: .bool).value as? Bool {
             return value
         }else {
@@ -520,9 +496,12 @@ extension Auth {
         }
     }
     
-    public func getStringFlag(code: String, defaultValue: String? = nil) throws -> String {
+    public func getStringFlag(
+        code: String,
+        defaultValue: String? = nil
+    ) throws -> String {
         if let value = try getFlag(code: code, defaultValue: defaultValue, flagType: .string).value as? String {
-           return value
+            return value
         }else{
             if let defaultValue = defaultValue {
                 return defaultValue
@@ -532,7 +511,10 @@ extension Auth {
         }
     }
     
-    public func getIntegerFlag(code: String, defaultValue: Int? = nil) throws -> Int {
+    public func getIntegerFlag(
+        code: String,
+        defaultValue: Int? = nil
+    ) throws -> Int {
         if let value = try getFlag(code: code, defaultValue: defaultValue, flagType: .int).value as? Int {
             return value
         }else {
@@ -546,7 +528,11 @@ extension Auth {
     
     // Internal
     
-    private func getFlagInternal(code: String, defaultValue: Any?, flagType: Flag.ValueType?) throws -> Flag {
+    private func getFlagInternal(
+        code: String,
+        defaultValue: Any?,
+        flagType: Flag.ValueType?
+    ) throws -> Flag {
         
         guard let featureFlagsClaim = getClaim(forKey: ClaimKey.featureFlags.rawValue) else {
             throw FlagError.unknownError
@@ -561,20 +547,19 @@ extension Auth {
            let actualFlagType = Flag.ValueType(rawValue: valueTypeLetter),
            let actualValue = flagData["v"] {
             
-            // Value type check
-            if let flagType = flagType,
-                flagType != actualFlagType {
+            if
+                let flagType = flagType,
+                flagType != actualFlagType
+            {
                 throw FlagError.incorrectType("Flag \"\(code)\" is type \(actualFlagType.typeDescription) - requested type \(flagType.typeDescription)")
             }
             
             return Flag(code: code, type: actualFlagType, value: actualValue)
             
-        }else {
-            
+        } else {
             if let defaultValue = defaultValue {
-                // This flag does not exist - default value provided
                 return Flag(code: code, type: nil, value: defaultValue, isDefault: true)
-            }else {
+            } else {
                 throw FlagError.notFound
             }
         }
@@ -608,7 +593,7 @@ public struct Flag {
     public let type: ValueType?
     public let value: Any
     public let isDefault: Bool
-
+    
     public init(code: String, type: ValueType?, value: Any, isDefault: Bool = false) {
         self.code = code
         self.type = type
@@ -623,9 +608,9 @@ public struct Flag {
         
         fileprivate var typeDescription: String {
             switch self {
-            case .string: return "string"
-            case .bool: return "boolean"
-            case .int: return "integer"
+                case .string: return "string"
+                case .bool: return "boolean"
+                case .int: return "integer"
             }
         }
     }
