@@ -160,14 +160,14 @@ public final class Auth {
     @MainActor
     private func getPresenter() async -> AppKitOrUIKitResponder? {
         let keyWindow = AppKitOrUIKitApplication.shared.firstKeyWindow
-
-        #if os(iOS)
+        
+#if os(iOS)
         let topController = keyWindow?._SwiftUIX_nearestResponder(ofKind: AppKitOrUIKitViewController.self)
-
+        
         return topController?.topmostPresentedViewController
-        #else
+#else
         return keyWindow
-        #endif
+#endif
     }
     
     public func register(orgCode: String = "") async throws -> () {
@@ -329,6 +329,7 @@ public final class Auth {
                 if let error = error {
                     self.logger.error(message: "Failed to discover OpenID configuration: \(error.localizedDescription)")
                     continuation.resume(throwing: error)
+                    return
                 }
                 
                 guard let configuration = configuration else {
@@ -437,19 +438,23 @@ public final class Auth {
         
         let params = ["Kinde-SDK": "Swift/\(SDKVersion.versionString)"]
         return try await withCheckedThrowingContinuation { continuation in
-            authState.performAction(freshTokens: { (accessToken, idToken, error1) in
-                if let error = error1 {
-                    self.logger.error(message: "Failed to get authentication tokens: \(error.localizedDescription)")
-                    return continuation.resume(with: .failure(error))
-                }
-                
-                guard let accessToken1 = accessToken else {
-                    self.logger.error(message: "Failed to get access token")
-                    return continuation.resume(with: .failure(AuthError.notAuthenticated))
-                }
-                let tokens = Tokens(accessToken: accessToken1, idToken: idToken)
-                continuation.resume(with: .success(tokens))
-            }, additionalRefreshParameters: params)
+            authState.performAction(
+                freshTokens: {
+                    (accessToken, idToken, error1) in
+                    if let error = error1 {
+                        self.logger.error(message: "Failed to get authentication tokens: \(error.localizedDescription)")
+                        return continuation.resume(with: .failure(error))
+                    }
+                    
+                    guard let accessToken1 = accessToken else {
+                        self.logger.error(message: "Failed to get access token")
+                        return continuation.resume(with: .failure(AuthError.notAuthenticated))
+                    }
+                    let tokens = Tokens(accessToken: accessToken1, idToken: idToken)
+                    continuation.resume(with: .success(tokens))
+                },
+                additionalRefreshParameters: params
+            )
         }
     }
     
